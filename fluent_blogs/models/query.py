@@ -1,6 +1,17 @@
+"""
+A query interface to retrieve blog models and tags.
+"""
+from calendar import monthrange
+from datetime import datetime, timedelta
 from django.contrib.contenttypes.models import ContentType
 from django.db.models.aggregates import Count
-from fluent_blogs.models.db import Entry
+from fluent_blogs.models.db import get_entry_model
+from fluent_blogs.utils.compat import utc
+
+__all__ = (
+    'query_entries',
+    'query_tags',
+)
 
 ENTRY_ORDER_BY_FIELDS = {
     'slug': 'slug',
@@ -62,7 +73,7 @@ def query_entries(queryset=None,
     This interface is mainly used by the ``get_entries`` template tag.
     """
     if queryset is None:
-        queryset = Entry.objects.all()
+        queryset = get_entry_model().objects.all()
 
     if not future:
         queryset = queryset.published()
@@ -125,7 +136,8 @@ def query_tags(order=None, orderby=None, limit=None):
     This interface is mainly used by the ``get_tags`` template tag.
     """
     from taggit.models import Tag, TaggedItem    # feature is still optional
-    ct = ContentType.objects.get_for_model(Entry)  # take advantage of local caching.
+    EntryModel = get_entry_model()
+    ct = ContentType.objects.get_for_model(EntryModel)  # take advantage of local caching.
     entry_tag_ids = TaggedItem.objects.filter(content_type=ct).values_list('tag_id')
 
     # get tags
@@ -142,5 +154,29 @@ def query_tags(order=None, orderby=None, limit=None):
     if limit:
         queryset = queryset[:limit]
 
-    print queryset.query
     return queryset
+
+
+def get_date_range(year=None, month=None, day=None):
+    """
+    Return a start..end range to query for a specific month, day or year.
+    """
+    if year is None:
+        return None
+
+    if month is None:
+        # year only
+        start = datetime(year, 1, 1, 0, 0, 0, tzinfo=utc)
+        end = datetime(year, 12, 31, 23, 59, 59, 999, tzinfo=utc)
+        return (start, end)
+
+    if day is None:
+        # year + month only
+        start = datetime(year, month, 1, 0, 0, 0, tzinfo=utc)
+        end = start + timedelta(days=monthrange(year, month)[1], microseconds=-1)
+        return (start, end)
+    else:
+        # Exact day
+        start = datetime(year, month, day, 0, 0, 0, tzinfo=utc)
+        end = start + timedelta(days=1, microseconds=-1)
+        return (start, end)

@@ -1,5 +1,12 @@
-{% extends "fluent_blogs/base.html" %}
+{% extends "fluent_blogs/base_internal.html" %}
 {% load i18n fluent_blogs_tags %}
+{% comment %}
+
+    This is the central template for archive pages.
+    The layout can be customized easily by overwriting the included templates.
+    Each archive also has an individual template, they all extend this template.
+
+{% endcomment %}
 
 {% block meta-description %}{% trans "Latest entries" %}{% endblock %}
 
@@ -22,7 +29,7 @@
   {% block content_title %}
     {% if category %}<h1>{{ category }}</h1>{% endif %}
     {% if tag %}<h1>{% blocktrans with tag=tag %}Tag {{ tag }}{% endblocktrans %}</h1>{% endif %}
-    {% if author %}<h1>{% blocktrans with author_name.get_full_name|default:author.username as author %}Entries by {{ author_name }}{% endblocktrans %}</h1>{% endif %}
+    {% if author %}<h1>{% blocktrans with author.get_full_name|default:author.username as author_name %}Entries by {{ author_name }}{% endblocktrans %}</h1>{% endif %}
 
     {% if category and category.description %}
       <p>{{ category.description|striptags|safe }}</p>
@@ -33,9 +40,7 @@
   {% block object_list %}
     {% for object in object_list %}
       <article id="blog-entry-{{ object.pk }}" class="blog-entry">
-        {% with object.html_content|truncatewords_html:100|safe as object_content %}
-          {% include "fluent_blogs/entry_archive/item.html" %}
-        {% endwith %}
+        {% include "fluent_blogs/entry_archive/item.html" %}
       </article>
     {% empty %}
       {% include "fluent_blogs/entry_archive/empty.html" %}

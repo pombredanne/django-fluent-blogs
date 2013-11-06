@@ -1,16 +1,32 @@
-from categories.models import Category
-from django.contrib.auth.models import User
+from django.conf import settings
+from django.contrib.contenttypes.models import ContentType
 from django.contrib.sitemaps import Sitemap
-from fluent_blogs.models import Entry
+from django.utils.translation import get_language
+from fluent_blogs import appsettings
+from fluent_blogs.models import get_entry_model, get_category_model
 from fluent_blogs.urlresolvers import blog_reverse
+from fluent_blogs.utils.compat import get_user_model
+from parler.models import TranslatableModel
+
+User = get_user_model()
+EntryModel = get_entry_model()
+CategoryModel = get_category_model()
 
 
 class EntrySitemap(Sitemap):
     """
-    The sitemap definition for the pages created with django-fluent-pages.
+    The sitemap definition for the pages created with django-fluent-blogs.
     """
     def items(self):
-        return Entry.objects.published().order_by('slug')
+        qs = EntryModel.objects.published().order_by('-publication_date')
+
+        if issubclass(EntryModel, TranslatableModel):
+            # Note that .active_translations() can't be combined with other filters for translations__.. fields.
+            qs = qs.active_translations()
+            return qs.order_by('-publication_date', 'translations__language_code')
+        else:
+            return qs.order_by('-publication_date')
+
 
     def lastmod(self, urlnode):
         """Return the last modification of the entry."""
@@ -23,12 +39,12 @@ class EntrySitemap(Sitemap):
 
 class CategoryArchiveSitemap(Sitemap):
     def items(self):
-        only_ids = Entry.objects.values('categories').order_by().distinct()
-        return Category.objects.filter(id__in=only_ids)
+        only_ids = EntryModel.objects.published().values('categories').order_by().distinct()
+        return CategoryModel.objects.filter(id__in=only_ids)
 
     def lastmod(self, category):
         """Return the last modification of the entry."""
-        lastitems = Entry.objects.published().order_by('-modification_date').filter(categories=category).only('modification_date')
+        lastitems = EntryModel.objects.published().order_by('-modification_date').filter(categories=category).only('modification_date')
         return lastitems[0].modification_date
 
     def location(self, category):
@@ -38,12 +54,12 @@ class CategoryArchiveSitemap(Sitemap):
 
 class AuthorArchiveSitemap(Sitemap):
     def items(self):
-        only_ids = Entry.objects.values('author').order_by().distinct()
+        only_ids = EntryModel.objects.published().values('author').order_by().distinct()
         return User.objects.filter(id__in=only_ids)
 
     def lastmod(self, author):
         """Return the last modification of the entry."""
-        lastitems = Entry.objects.published().order_by('-modification_date').filter(author=author).only('modification_date')
+        lastitems = EntryModel.objects.published().order_by('-modification_date').filter(author=author).only('modification_date')
         return lastitems[0].modification_date
 
     def location(self, author):
@@ -53,13 +69,23 @@ class AuthorArchiveSitemap(Sitemap):
 
 class TagArchiveSitemap(Sitemap):
     def items(self):
-        from taggit.models import TaggedItem, Tag
-        only_ids = TaggedItem.tags_for(Entry).values('id').order_by().distinct()
-        return Tag.objects.filter(taggit_taggeditem_items__in=only_ids)
+        # Tagging is optional. When it's not used, it's ignored.
+        if 'taggit' not in settings.INSTALLED_APPS:
+            return []
+
+        from taggit.models import Tag
+        only_instances = EntryModel.objects.published().only('pk')
+
+        # Until https://github.com/alex/django-taggit/pull/86 is merged,
+        # better use the field names directly instead of bulk_lookup_kwargs
+        return Tag.objects.filter(
+            taggit_taggeditem_items__object_id__in=only_instances,
+            taggit_taggeditem_items__content_type=ContentType.objects.get_for_model(EntryModel)
+        )
 
     def lastmod(self, tag):
         """Return the last modification of the entry."""
-        lastitems = Entry.objects.published().order_by('-modification_date').filter(tags=tag).only('modification_date')
+        lastitems = EntryModel.objects.published().order_by('-modification_date').filter(tags=tag).only('modification_date')
         return lastitems[0].modification_date
 
     def location(self, tag):
